@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable disable
+
 using System.CommandLine;
 using Microsoft.DotNet.Cli.Commands.Restore;
 using Microsoft.DotNet.Cli.Extensions;
@@ -48,7 +50,7 @@ internal static class PublishCommandParser
 
     public static readonly Option<bool> NoSelfContainedOption = CommonOptions.NoSelfContainedOption;
 
-    public static readonly Option<string> RuntimeOption = CommonOptions.RuntimeOption;
+    public static readonly Option<string> RuntimeOption = CommonOptions.RuntimeOption(CliCommandStrings.PublishRuntimeOptionDescription);
 
     public static readonly Option<string> FrameworkOption = CommonOptions.FrameworkOption(CliCommandStrings.PublishFrameworkOptionDescription);
 
@@ -76,7 +78,7 @@ internal static class PublishCommandParser
         command.Options.Add(NoSelfContainedOption);
         command.Options.Add(NoLogoOption);
         command.Options.Add(FrameworkOption);
-        command.Options.Add(RuntimeOption.WithHelpDescription(command, CliCommandStrings.PublishRuntimeOptionDescription));
+        command.Options.Add(RuntimeOption);
         command.Options.Add(ConfigurationOption);
         command.Options.Add(CommonOptions.VersionSuffixOption);
         command.Options.Add(CommonOptions.InteractiveMsBuildForwardOption);

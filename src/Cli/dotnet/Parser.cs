@@ -1,9 +1,10 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable disable
+
 using System.CommandLine;
 using System.CommandLine.Completions;
-using System.CommandLine.Help;
 using System.Reflection;
 using Microsoft.DotNet.Cli.Commands.Build;
 using Microsoft.DotNet.Cli.Commands.BuildServer;
@@ -30,6 +31,7 @@ using Microsoft.DotNet.Cli.Commands.Publish;
 using Microsoft.DotNet.Cli.Commands.Reference;
 using Microsoft.DotNet.Cli.Commands.Restore;
 using Microsoft.DotNet.Cli.Commands.Run;
+using Microsoft.DotNet.Cli.Commands.Run.Api;
 using Microsoft.DotNet.Cli.Commands.Sdk;
 using Microsoft.DotNet.Cli.Commands.Solution;
 using Microsoft.DotNet.Cli.Commands.Store;
@@ -42,6 +44,7 @@ using Microsoft.DotNet.Cli.Extensions;
 using Microsoft.DotNet.Cli.Utils;
 using Microsoft.DotNet.Cli.Utils.Extensions;
 using Microsoft.TemplateEngine.Cli;
+using Microsoft.TemplateEngine.Cli.Help;
 using Command = System.CommandLine.Command;
 
 namespace Microsoft.DotNet.Cli;
@@ -78,6 +81,7 @@ public static class Parser
         RemoveCommandParser.GetCommand(),
         RestoreCommandParser.GetCommand(),
         RunCommandParser.GetCommand(),
+        RunApiCommandParser.GetCommand(),
         SolutionCommandParser.GetCommand(),
         StoreCommandParser.GetCommand(),
         TestCommandParser.GetCommand(),
@@ -125,9 +129,9 @@ public static class Parser
             {
                 rootCommand.Options.RemoveAt(i);
             }
-            else if (option is HelpOption helpOption)
+            else if (option is System.CommandLine.Help.HelpOption helpOption)
             {
-                helpOption.Action = new HelpAction()
+                helpOption.Action = new DotnetHelpAction()
                 {
                     Builder = DotnetHelpBuilder.Instance.Value
                 };
@@ -269,31 +273,8 @@ public static class Parser
 
             DotnetHelpBuilder dotnetHelpBuilder = new(windowWidth);
 
-            SetHelpCustomizations(dotnetHelpBuilder);
-
             return dotnetHelpBuilder;
         });
-
-        private static void SetHelpCustomizations(HelpBuilder builder)
-        {
-            foreach (var option in OptionForwardingExtensions.HelpDescriptionCustomizations.Keys)
-            {
-                Func<HelpContext, string> descriptionCallback = (HelpContext context) =>
-                {
-                    foreach (var (command, helpText) in OptionForwardingExtensions.HelpDescriptionCustomizations[option])
-                    {
-                        if (context.ParseResult.CommandResult.Command.Equals(command))
-                        {
-                            return helpText;
-                        }
-                    }
-                    return null;
-                };
-                builder.CustomizeSymbol(option, secondColumnText: descriptionCallback);
-            }
-
-            builder.CustomizeSymbol(WorkloadSearchVersionsCommandParser.GetCommand(), secondColumnText: CliStrings.ShortWorkloadSearchVersionDescription);
-        }
 
         public static void additionalOption(HelpContext context)
         {
@@ -390,6 +371,11 @@ public static class Parser
                 {
                     // Don't show package completions in help
                     PackageAddCommandParser.CmdPackageArgument.CompletionSources.Clear();
+                }
+                else if (command.Name.Equals(WorkloadSearchCommandParser.GetCommand().Name))
+                {
+                    // Set shorter description for displaying parent command help.
+                    WorkloadSearchVersionsCommandParser.GetCommand().Description = CliStrings.ShortWorkloadSearchVersionDescription;
                 }
 
                 base.Write(context);
