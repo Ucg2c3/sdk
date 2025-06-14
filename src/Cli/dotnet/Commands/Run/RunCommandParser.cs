@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable disable
+
 using System.CommandLine;
 using Microsoft.DotNet.Cli.Extensions;
 
@@ -14,7 +16,7 @@ internal static class RunCommandParser
 
     public static readonly Option<string> FrameworkOption = CommonOptions.FrameworkOption(CliCommandStrings.RunFrameworkOptionDescription);
 
-    public static readonly Option<string> RuntimeOption = CommonOptions.RuntimeOption;
+    public static readonly Option<string> RuntimeOption = CommonOptions.RuntimeOption(CliCommandStrings.RunRuntimeOptionDescription);
 
     public static readonly Option<string> ProjectOption = new("--project")
     {
@@ -78,7 +80,7 @@ internal static class RunCommandParser
 
         command.Options.Add(ConfigurationOption);
         command.Options.Add(FrameworkOption);
-        command.Options.Add(RuntimeOption.WithHelpDescription(command, CliCommandStrings.RunRuntimeOptionDescription));
+        command.Options.Add(RuntimeOption);
         command.Options.Add(ProjectOption);
         command.Options.Add(PropertyOption);
         command.Options.Add(LaunchProfileOption);

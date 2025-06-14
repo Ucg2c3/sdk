@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable disable
+
 using System.CommandLine;
 using System.CommandLine.Completions;
 using Microsoft.Extensions.EnvironmentAbstractions;
@@ -13,7 +15,7 @@ namespace Microsoft.DotNet.Cli.Commands.Package.Add;
 
 internal static class PackageAddCommandParser
 {
-    public static readonly Argument<PackageIdentity> CmdPackageArgument = CommonArguments.PackageIdentityArgument(true)
+    public static readonly Argument<PackageIdentity> CmdPackageArgument = CommonArguments.RequiredPackageIdentityArgument()
     .AddCompletions((context) =>
     {
         // we should take --prerelease flags into account for version completion
