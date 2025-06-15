@@ -1,8 +1,6 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-#nullable enable
-
 using System.Collections.Immutable;
 using System.CommandLine;
 using System.Diagnostics;
@@ -55,7 +53,7 @@ public class RunCommand
 
     private bool ShouldBuild => !NoBuild;
 
-    public string LaunchProfile { get; }
+    public string? LaunchProfile { get; }
     public bool NoLaunchProfile { get; }
 
     /// <summary>
@@ -66,7 +64,7 @@ public class RunCommand
     public RunCommand(
         bool noBuild,
         string? projectFileOrDirectory,
-        string launchProfile,
+        string? launchProfile,
         bool noLaunchProfile,
         bool noLaunchProfileArguments,
         bool noRestore,
@@ -112,17 +110,14 @@ public class RunCommand
         }
         else
         {
-            if (EntryPointFileFullPath is not null)
-            {
-                projectFactory = new VirtualProjectBuildingCommand
-                {
-                    EntryPointFileFullPath = EntryPointFileFullPath,
-                }.PrepareProjectInstance().CreateProjectInstance;
-            }
-
             if (NoCache)
             {
                 throw new GracefulException(CliCommandStrings.InvalidOptionCombination, RunCommandParser.NoCacheOption.Name, RunCommandParser.NoBuildOption.Name);
+            }
+
+            if (EntryPointFileFullPath is not null)
+            {
+                projectFactory = CreateVirtualCommand().PrepareProjectInstance().CreateProjectInstance;
             }
         }
 
@@ -150,7 +145,7 @@ public class RunCommand
         }
     }
 
-    private void ApplyLaunchSettingsProfileToCommand(ICommand targetCommand, ProjectLaunchSettingsModel? launchSettings)
+    internal void ApplyLaunchSettingsProfileToCommand(ICommand targetCommand, ProjectLaunchSettingsModel? launchSettings)
     {
         if (launchSettings == null)
         {
@@ -177,7 +172,7 @@ public class RunCommand
         }
     }
 
-    private bool TryGetLaunchProfileSettingsIfNeeded(out ProjectLaunchSettingsModel? launchSettingsModel)
+    internal bool TryGetLaunchProfileSettingsIfNeeded(out ProjectLaunchSettingsModel? launchSettingsModel)
     {
         launchSettingsModel = default;
         if (NoLaunchProfile)
@@ -256,19 +251,9 @@ public class RunCommand
         int buildResult;
         if (EntryPointFileFullPath is not null)
         {
-            var command = new VirtualProjectBuildingCommand
-            {
-                EntryPointFileFullPath = EntryPointFileFullPath,
-            };
-
-            CommonRunHelpers.AddUserPassedProperties(command.GlobalProperties, RestoreArgs);
-
+            var command = CreateVirtualCommand();
             projectFactory = command.CreateProjectInstance;
-            buildResult = command.Execute(
-                binaryLoggerArgs: RestoreArgs,
-                consoleLogger: MakeTerminalLogger(Verbosity ?? GetDefaultVerbosity()),
-                noRestore: NoRestore,
-                noCache: NoCache);
+            buildResult = command.Execute();
         }
         else
         {
@@ -289,13 +274,26 @@ public class RunCommand
         }
     }
 
+    private VirtualProjectBuildingCommand CreateVirtualCommand()
+    {
+        Debug.Assert(EntryPointFileFullPath != null);
+
+        return new(
+            entryPointFileFullPath: EntryPointFileFullPath,
+            msbuildArgs: RestoreArgs)
+        {
+            NoRestore = NoRestore,
+            NoCache = NoCache,
+        };
+    }
+
     private string[] GetRestoreArguments(IEnumerable<string> cliRestoreArgs)
     {
         List<string> args = ["-nologo"];
 
         if (Verbosity is null)
         {
-            args.Add($"-verbosity:{GetDefaultVerbosity()}");
+            args.Add($"-verbosity:{GetDefaultVerbosity(Interactive)}");
         }
 
         args.AddRange(cliRestoreArgs);
@@ -303,14 +301,14 @@ public class RunCommand
         return [.. args];
     }
 
-    private VerbosityOptions GetDefaultVerbosity()
+    internal static VerbosityOptions GetDefaultVerbosity(bool interactive)
     {
         // --interactive need to output guide for auth. It cannot be
         // completely "quiet"
-        return Interactive ? VerbosityOptions.minimal : VerbosityOptions.quiet;
+        return interactive ? VerbosityOptions.minimal : VerbosityOptions.quiet;
     }
 
-    private ICommand GetTargetCommand(Func<ProjectCollection, ProjectInstance>? projectFactory)
+    internal ICommand GetTargetCommand(Func<ProjectCollection, ProjectInstance>? projectFactory)
     {
         FacadeLogger? logger = LoggerUtility.DetermineBinlogger(RestoreArgs, "dotnet-run");
         var project = EvaluateProject(ProjectFileFullPath, projectFactory, RestoreArgs, logger);
@@ -321,7 +319,7 @@ public class RunCommand
         var command = CreateCommandFromRunProperties(project, runProperties);
         return command;
 
-        static ProjectInstance EvaluateProject(string? projectFilePath, Func<ProjectCollection, ProjectInstance>? projectFactory, string[]? restoreArgs, ILogger? binaryLogger)
+        static ProjectInstance EvaluateProject(string? projectFilePath, Func<ProjectCollection, ProjectInstance>? projectFactory, string[] restoreArgs, ILogger? binaryLogger)
         {
             Debug.Assert(projectFilePath is not null || projectFactory is not null);
 
@@ -394,8 +392,7 @@ public class RunCommand
         }
     }
 
-
-    static ILogger MakeTerminalLogger(VerbosityOptions? verbosity)
+    private static ILogger MakeTerminalLogger(VerbosityOptions? verbosity)
     {
         var msbuildVerbosity = ToLoggerVerbosity(verbosity);
 
@@ -516,24 +513,12 @@ public class RunCommand
         // bl information to synchronize the restore and build logger configurations
         var applicationArguments = parseResult.GetValue(RunCommandParser.ApplicationArguments)?.ToList();
 
-        var binlogArgs = new List<string>();
-        var nonBinLogArgs = new List<string>();
-        foreach (var arg in applicationArguments ?? [])
-        {
-            if (LoggerUtility.IsBinLogArgument(arg))
-            {
-                binlogArgs.Add(arg);
-            }
-            else
-            {
-                nonBinLogArgs.Add(arg);
-            }
-        }
+        LoggerUtility.SeparateBinLogArguments(applicationArguments, out var binLogArgs, out var nonBinLogArgs);
 
         var restoreArgs = parseResult.OptionValuesToBeForwarded(RunCommandParser.GetCommand()).ToList();
-        if (binlogArgs.Count > 0)
+        if (binLogArgs.Count > 0)
         {
-            restoreArgs.AddRange(binlogArgs);
+            restoreArgs.AddRange(binLogArgs);
         }
 
         var command = new RunCommand(
