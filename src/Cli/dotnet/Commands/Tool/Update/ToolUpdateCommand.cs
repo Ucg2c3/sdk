@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable disable
+
 using System.CommandLine;
 using Microsoft.DotNet.Cli.Commands.Tool.Common;
 using Microsoft.DotNet.Cli.Commands.Tool.Install;
@@ -80,7 +82,7 @@ internal class ToolUpdateCommand : CommandBase
 
     internal static void EnsureNoConflictPackageIdentityVersionOption(ParseResult parseResult)
     {
-        if (!string.IsNullOrEmpty(parseResult.GetValue(ToolUpdateCommandParser.PackageIdentityArgument)?.Version?.ToString()) &&
+        if (!string.IsNullOrEmpty(parseResult.GetValue(ToolUpdateCommandParser.PackageIdentityArgument)?.VersionRange?.OriginalString) &&
             !string.IsNullOrEmpty(parseResult.GetValue(ToolAppliedOption.VersionOption)))
         {
             throw new GracefulException(CliStrings.PackageIdentityArgumentVersionOptionConflict);

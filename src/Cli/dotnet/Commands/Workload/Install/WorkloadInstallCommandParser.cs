@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable disable
+
 using System.CommandLine;
 
 namespace Microsoft.DotNet.Cli.Commands.Workload.Install;
@@ -32,6 +34,8 @@ internal static class WorkloadInstallCommandParser
         Description = CliCommandStrings.TempDirOptionDescription
     };
 
+    public static readonly Option<VerbosityOptions> VerbosityOption = CommonOptions.VerbosityOption(VerbosityOptions.normal);
+
     private static readonly Command Command = ConstructCommand();
 
     public static Command GetCommand()
@@ -58,7 +62,7 @@ internal static class WorkloadInstallCommandParser
         command.Options.Add(SkipManifestUpdateOption);
         command.Options.Add(TempDirOption);
         command.AddWorkloadCommandNuGetRestoreActionConfigOptions();
-        command.Options.Add(CommonOptions.VerbosityOption);
+        command.Options.Add(VerbosityOption);
         command.Options.Add(SkipSignCheckOption);
         command.Options.Add(InstallingWorkloadCommandParser.WorkloadSetVersionOption);
     }

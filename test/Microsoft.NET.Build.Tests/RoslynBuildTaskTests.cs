@@ -1,73 +1,112 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using Basic.CompilerLog.Util;
 using Microsoft.Build.Logging.StructuredLogger;
+using Microsoft.CodeAnalysis;
 
 namespace Microsoft.NET.Build.Tests;
 
 public sealed class RoslynBuildTaskTests(ITestOutputHelper log) : SdkTest(log)
 {
-    private const string CoreCompilerFileName = "csc.dll";
-    private const string FxCompilerFileName = "csc.exe";
+    private static string CompilerFileNameWithoutExtension(Language language) => language switch
+    {
+        Language.CSharp => "csc",
+        Language.VisualBasic => "vbc",
+        _ => throw new ArgumentOutOfRangeException(paramName: nameof(language)),
+    };
+
+    private static string CoreCompilerFileName(Language language) => CompilerFileNameWithoutExtension(language) + ".dll";
+
+    private static string FxCompilerFileName(Language language) => CompilerFileNameWithoutExtension(language) + ".exe";
 
     [FullMSBuildOnlyTheory, CombinatorialData]
-    public void FullMSBuild_SdkStyle(bool useSharedCompilation)
+    public void FullMSBuild_SdkStyle(bool useSharedCompilation, Language language)
     {
-        var testAsset = CreateProject(useSharedCompilation);
+        var testAsset = CreateProject(useSharedCompilation, language);
         var buildCommand = BuildAndRunUsingMSBuild(testAsset);
-        VerifyCompiler(buildCommand, CoreCompilerFileName, useSharedCompilation);
+        VerifyCompiler(buildCommand, CoreCompilerFileName(language), useSharedCompilation);
     }
 
     [FullMSBuildOnlyTheory, CombinatorialData]
-    public void FullMSBuild_SdkStyle_OptOut(bool useSharedCompilation)
+    public void FullMSBuild_SdkStyle_OptOut(bool useSharedCompilation, Language language)
     {
-        var testAsset = CreateProject(useSharedCompilation).WithProjectChanges(static doc =>
+        var testAsset = CreateProject(useSharedCompilation, language).WithProjectChanges(static doc =>
         {
             doc.Root!.Element("PropertyGroup")!.Add(new XElement("RoslynCompilerType", "Framework"));
         });
         var buildCommand = BuildAndRunUsingMSBuild(testAsset);
-        VerifyCompiler(buildCommand, FxCompilerFileName, useSharedCompilation);
+        VerifyCompiler(buildCommand, FxCompilerFileName(language), useSharedCompilation);
     }
 
     [FullMSBuildOnlyTheory, CombinatorialData]
-    public void FullMSBuild_NonSdkStyle(bool useSharedCompilation)
+    public void FullMSBuild_NonSdkStyle(bool useSharedCompilation, Language language)
     {
-        var testAsset = CreateProject(useSharedCompilation, static project =>
+        var testAsset = CreateProject(useSharedCompilation, language, static project =>
         {
             project.IsSdkProject = false;
             project.TargetFrameworkVersion = "v4.7.2";
         });
         var buildCommand = BuildAndRunUsingMSBuild(testAsset);
-        VerifyCompiler(buildCommand, FxCompilerFileName, useSharedCompilation);
+        VerifyCompiler(buildCommand, FxCompilerFileName(language), useSharedCompilation);
+    }
+
+    [FullMSBuildOnlyTheory, CombinatorialData]
+    public void FullMSBuild_SdkStyle_ToolsetPackage(bool useSharedCompilation, Language language)
+    {
+        var testAsset = CreateProject(useSharedCompilation, language, AddCompilersToolsetPackage);
+        var buildCommand = BuildAndRunUsingMSBuild(testAsset);
+        VerifyCompiler(buildCommand, FxCompilerFileName(language), useSharedCompilation, toolsetPackage: true);
     }
 
     [Theory, CombinatorialData]
-    public void DotNet(bool useSharedCompilation)
+    public void DotNet(bool useSharedCompilation, Language language)
     {
-        var testAsset = CreateProject(useSharedCompilation);
+        var testAsset = CreateProject(useSharedCompilation, language);
         var buildCommand = BuildAndRunUsingDotNet(testAsset);
-        VerifyCompiler(buildCommand, CoreCompilerFileName, useSharedCompilation);
+        VerifyCompiler(buildCommand, CoreCompilerFileName(language), useSharedCompilation);
     }
 
-    private TestAsset CreateProject(bool useSharedCompilation, Action<TestProject>? configure = null, [CallerMemberName] string callingMethod = "")
+    [Theory, CombinatorialData]
+    public void DotNet_ToolsetPackage(bool useSharedCompilation, Language language)
     {
+        var testAsset = CreateProject(useSharedCompilation, language, AddCompilersToolsetPackage);
+        var buildCommand = BuildAndRunUsingDotNet(testAsset);
+        VerifyCompiler(buildCommand, CoreCompilerFileName(language), useSharedCompilation, toolsetPackage: true);
+    }
+
+    private TestAsset CreateProject(bool useSharedCompilation, Language language, Action<TestProject>? configure = null, [CallerMemberName] string callingMethod = "")
+    {
+        var (projExtension, sourceName, sourceText) = language switch
+        {
+            Language.CSharp => (".csproj", "Program.cs", """
+                class Program
+                {
+                    static void Main()
+                    {
+                        System.Console.WriteLine(40 + 2);
+                    }
+                }
+                """),
+            Language.VisualBasic => (".vbproj", "Program.vb", """
+                Module Program
+                    Sub Main()
+                        System.Console.WriteLine(40 + 2)
+                    End Sub
+                End Module
+                """),
+            _ => throw new ArgumentOutOfRangeException(paramName: nameof(language)),
+        };
+
         var project = new TestProject
         {
             Name = "App1",
             IsExe = true,
             SourceFiles =
             {
-                ["Program.cs"] = """
-                    class Program
-                    {
-                        static void Main()
-                        {
-                            System.Console.WriteLine(40 + 2);
-                        }
-                    }
-                    """,
+                [sourceName] = sourceText,
             },
         };
 
@@ -78,7 +117,14 @@ public sealed class RoslynBuildTaskTests(ITestOutputHelper log) : SdkTest(log)
         }
 
         configure?.Invoke(project);
-        return _testAssetsManager.CreateTestProject(project, callingMethod: callingMethod);
+        return _testAssetsManager.CreateTestProject(project, callingMethod: callingMethod, targetExtension: projExtension);
+    }
+
+    private static void AddCompilersToolsetPackage(TestProject project)
+    {
+        string roslynVersion = typeof(Compilation).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+')[0];
+        Assert.False(string.IsNullOrEmpty(roslynVersion));
+        project.PackageReferences.Add(new TestPackageReference("Microsoft.Net.Compilers.Toolset", roslynVersion));
     }
 
     private TestCommand BuildAndRunUsingMSBuild(TestAsset testAsset)
@@ -109,13 +155,23 @@ public sealed class RoslynBuildTaskTests(ITestOutputHelper log) : SdkTest(log)
             .And.HaveStdOut("42");
     }
 
-    private static void VerifyCompiler(TestCommand buildCommand, string compilerFileName, bool usedCompilerServer)
+    private static void VerifyCompiler(TestCommand buildCommand, string compilerFileName, bool usedCompilerServer, bool toolsetPackage = false)
     {
         var binaryLogPath = Path.Join(buildCommand.WorkingDirectory, "msbuild.binlog");
         using (var reader = BinaryLogReader.Create(binaryLogPath))
         {
             var call = reader.ReadAllCompilerCalls().Should().ContainSingle().Subject;
             Path.GetFileName(call.CompilerFilePath).Should().Be(compilerFileName);
+
+            const string toolsetPackageName = "microsoft.net.compilers.toolset";
+            if (toolsetPackage)
+            {
+                call.CompilerFilePath.Should().Contain(toolsetPackageName);
+            }
+            else
+            {
+                call.CompilerFilePath.Should().NotContain(toolsetPackageName);
+            }
         }
 
         // Verify compiler server message.
@@ -124,5 +180,11 @@ public sealed class RoslynBuildTaskTests(ITestOutputHelper log) : SdkTest(log)
         compilerServerMesssages.Should().ContainSingle().Which.Text.Should().StartWith(usedCompilerServer
             ? "CompilerServer: server - server processed compilation - "
             : "CompilerServer: tool - using command line tool by design");
+    }
+
+    public enum Language
+    {
+        CSharp,
+        VisualBasic,
     }
 }
